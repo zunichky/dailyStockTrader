@@ -43,6 +43,27 @@ def printStockData(stocksToWatch):
         i.highPriceCounter, i.steadyCount])
     app_log.info(table)
 
+
+def checkToSellOrBuy(curStock):
+    if (account.doIOwnThisStock(curStock.symbol) ):
+        checkToSell(curStock)
+    else:
+        checkToBuy(curStock)
+
+def checkToSell(curStock):
+    if (curStock.shouldISell() == True):
+        account.sellStock( curStock )
+        printStockData([curStock])
+
+def checkToBuy(curStock):
+    if (curStock.shouldIPurchase() == True):
+        #TODO get the actual purchase price
+        rawJson = getStockQuotes()
+        currentData = liveStockData.LiveStockData(rawJson, ticker = curStock.symbol, quote=True)
+        purchasePrice = account.purchaseStock(currentData )
+        printStockData([curStock])
+        curStock.confirmPurchase(purchasePrice)
+
 def processData(jsonResponse, curStock):
     currentData = liveStockData.LiveStockData(jsonResponse, ticker = curStock.symbol, quote=True)
     if (currentData.isValid()):
@@ -54,16 +75,7 @@ def processData(jsonResponse, curStock):
         app_log.info("Invalid Data")
         app_log.info(jsonResponse)
 
-    if (account.doIOwnThisStock(currentData.symbol) ):
-        if (curStock.shouldISell() == True):
-            account.sellStock( curStock )
-            printStockData([curStock])
-
-    elif (curStock.shouldIPurchase() == True):
-        #TODO get the actual purchase price
-        purchasePrice = account.purchaseStock(curStock )
-        printStockData([curStock])
-        curStock.confirmPurchase(purchasePrice)
+    checkToSellOrBuy(curStock)
 
 def updateWatchStocks(currentStocksWatching):
     updatedStocksToWatch = []
@@ -104,8 +116,57 @@ def printAllInfo(stocksToWatch, c):
     account.printHoldings(stocksToWatch)
     app_log.info("Today's PL %:" + str(account.pl))
     app_log.info("")
-    app_log.info("Refreshing data in " + config.Settings.config.get("default", "refreshRate", fallback=5) + " seconds")
-    app_log.info("")
+
+def getStockQuotes():
+    global lastUpdateTime
+    if (config.Settings.config.getboolean("default", "pullFromDB", fallback=False) == True):
+        #get data from db (simulation)
+        stockPriceRawData = brokerClient.Client.getQuotes( pullFromDb=True, time=lastUpdateTime )
+        #lastUpdateTime = lastUpdateTime + datetime.timedelta(seconds = config.Settings.config.getfloat("default", "refreshRate"))
+    else:
+        #get live stock data from internet
+        stockPriceRawData = brokerClient.Client.getQuotes( )
+    return stockPriceRawData
+
+def updateBufferStocksData(stocksToWatch):
+    global lastUpdateTime
+    updateRate = config.Settings.config.getfloat("default", "pullDataRate", fallback=1)
+    pullFromDb = config.Settings.config.getboolean("default", "pullFromDB", fallback=False)
+    refreshRate = config.Settings.config.getfloat("default", "refreshRate", fallback=5)
+    
+    if (pullFromDb):
+        lastUpdate = lastUpdateTime
+    else:
+        lastUpdate = datetime.datetime.now()
+    
+    exitTime = lastUpdate + datetime.timedelta(seconds = (refreshRate - .2))
+
+    while (lastUpdate <= exitTime ):
+        if (pullFromDb):
+            time.sleep(config.Settings.config.getfloat("simulationSettings", "refreshRate", fallback=.1))
+            lastUpdate = lastUpdate + datetime.timedelta(seconds = updateRate)
+            lastUpdateTime = lastUpdate
+        else:
+            time.sleep(updateRate)
+            lastUpdate = datetime.datetime.now()
+
+        if (pullFromDb == True):
+            #get data from db (simulation)
+            stockPriceRawJsonData = brokerClient.Client.getQuotes( pullFromDb=True, time=lastUpdate )
+        else:
+            #get live stock data from internet
+            stockPriceRawJsonData = brokerClient.Client.getQuotes( )
+        
+        for curStock in stocksToWatch:
+            currentData = liveStockData.LiveStockData(stockPriceRawJsonData, ticker = curStock.symbol, quote=True)
+            if (currentData.isValid()):
+                if (currentData.isValidExchange()):
+                    curStock.updateRecentPriceList(currentData.currentPrice)
+                else:
+                    app_log.info("Invalid Exchange for stock: " + currentData.symbol + " " + currentData.exchange)
+            else:
+                app_log.info("Invalid Data")
+                app_log.info(stockPriceRawJsonData)
 
 def main():
     config.Settings.load("F:\\My Documents\\Code\\PennyStockTrading\\config.ini")
@@ -126,25 +187,29 @@ def main():
     global lastUpdateTime 
     lastUpdateTime = datetime.datetime.strptime(config.Settings.config.get("simulationSettings", "startTime"), "%Y-%m-%d %H:%M:%S")
 
-   # updateTime = 0
+    startTimer = time.time()
+    endTimer = time.time()
 
     while (True):
-        if (config.Settings.config.getboolean("default", "pullFromDB", fallback=False) == True):
-            #get data from db (simulation)
+        startTimer = time.time()
+        #add data to buffer until our refresh rate is hit
+        updateBufferStocksData(stocksToWatch)
 
-            lastUpdateTime = lastUpdateTime + datetime.timedelta(seconds = config.Settings.config.getfloat("default", "refreshRate"))
-            stockPriceRawData = brokerClient.Client.getQuotes( pullFromDb=True, time=lastUpdateTime )
-        else:
-            #get live stock data from internet
-            stockPriceRawData = brokerClient.Client.getQuotes( )
+        endTimerMid = time.time()
 
-        if (config.Settings.config.getboolean("default", "logDataToDB", fallback=False) == True):
-            insert_query = "INSERT INTO rawstockdata (timestamp, rawjson) VALUES ('" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  + "','" + str(stockPriceRawData).replace("'", '"').lower() + "')"
-            dbConnection.PostgreSQL.insert(insert_query)
+        for x in stocksToWatch:
+            x.updatePriceOffAverage()
+            checkToSellOrBuy(x)
+
+        '''
+        ----- OLD WAY -------
+        #now it's time to check the data
+        stockPriceRawData = getStockQuotes()
 
         for x in stocksToWatch:
             processData(stockPriceRawData, x)
-        
+        ------------------------
+        '''
         printAllInfo(stocksToWatch,brokerClient.Client._c)
 
         #only sleep if we don't have any stocks being held
@@ -153,15 +218,20 @@ def main():
             if (lastUpdateTime >  datetime.datetime.strptime(config.Settings.config.get("simulationSettings", "endTime"), "%Y-%m-%d %H:%M:%S") ):
                 app_log.info("Ending simulation")
                 return
-            time.sleep(config.Settings.config.getfloat("simulationSettings", "refreshRate", fallback=.1))
-        else:
-            time.sleep(config.Settings.config.getfloat("default", "refreshRate", fallback=5))
+            
+        #    time.sleep(config.Settings.config.getfloat("simulationSettings", "refreshRate", fallback=.1))
+        #else:
+        #    time.sleep(config.Settings.config.getfloat("default", "refreshRate", fallback=5))
 
         if (config.Settings.isUpdated() == True):
             app_log.info("Configure change detected")
             newStocksToWatch = updateWatchStocks(stocksToWatch)
             if (len(newStocksToWatch) > 0):
                 stocksToWatch = newStocksToWatch
+        
+        endTimer = time.time()
+        print(endTimerMid -  startTimer)
+        print(endTimer - startTimer )
 
 if __name__ == "__main__":
     main()

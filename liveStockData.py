@@ -19,13 +19,13 @@ class LiveStockData:
     def _parseJsonQuote(self, ticker, data):
         try:
             self.symbol = data[ticker]['symbol'].upper()
-            self.currentPrice = data[ticker]["bidPrice"]
+            self.currentPrice = data[ticker]["lastPrice"]
             self.exchange = str(data[ticker]["exchangeName"]).upper()
             self.valid = True
         except:
             try:
                 self.symbol = data[ticker.lower()]['symbol'].upper()
-                self.currentPrice = data[ticker.lower()]["bidprice"]
+                self.currentPrice = data[ticker.lower()]["lastprice"]
                 self.exchange = str(data[ticker.lower()]["exchangename"]).upper()
                 self.valid = True
             except:

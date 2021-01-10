@@ -39,7 +39,7 @@ class Client(object):
             
             #strftime("%Y-%m-%d %H:%M:%S")'
             time2 = time.strftime("%Y-%m-%d %H:%M:%S")
-            time1 = (time - datetime.timedelta(milliseconds= 4500)).strftime("%Y-%m-%d %H:%M:%S")
+            time1 = (time - datetime.timedelta(milliseconds= 2500)).strftime("%Y-%m-%d %H:%M:%S")
             selectQuery = "SELECT rawjson, key FROM public.rawstockdata WHERE timestamp BETWEEN '{}' AND '{}'".format(time1, time2)
             data = dbConnection.PostgreSQL.select(selectQuery)
             if (len(data) > 0):

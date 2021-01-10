@@ -27,6 +27,7 @@ class Stock:
         self.app_log = logging.getLogger('root')
         self._lastUpdateTime = ""
         self._recentPrices = []
+        self._previousRecentPrices = []
 
     def getSwingPercentage(self, highPrice, lowPrice):
         if (highPrice == lowPrice):
@@ -36,12 +37,21 @@ class Stock:
         except ZeroDivisionError:
             return 0
     
-    def average(lst): 
-        return sum(lst) / len(lst) 
+    def average(self, lst):
+        if (len(lst) > 0 ):
+            return sum(lst) / len(lst) 
+        else:
+            return 0
 
-    def updateRecentPriceList(self):
-        newPrice = self._getNewStockPrice()
-        self._recentPrices.append(newPrice)
+    def updateRecentPriceList(self, newPrice):
+        if (newPrice > 0):
+            self._recentPrices.append(newPrice)
+
+    def updatePriceOffAverage(self):
+        avg = round(self.average(self._recentPrices), 5)
+        self._previousRecentPrices = self._recentPrices
+        self._recentPrices = []
+        self.updatePrice(avg)
 
     def updatePrice(self, price):
         self.currentPrice = float(price)
@@ -49,8 +59,7 @@ class Stock:
         recentPricesSorted = sorted(self.recentPrices)
 
         if (self.highPrice == 0 or self.lowPrice == 0):
-            self.highPrice = self.currentPrice
-            self.lowPrice = self.currentPrice
+            self.resetData("_buyTrigger 0's")
             return
 
         if (self.currentPrice > self.highPrice ):
