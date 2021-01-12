@@ -2,7 +2,7 @@ from collections import deque
 from config import Settings
 import logging
 from prettytable import PrettyTable
-import brokerClient
+from Broker.brokerClient import *
 import liveStockData
 import time
 import datetime
@@ -170,17 +170,18 @@ class Stock:
             self.triggered = False
             self.resetData("_sellTrigger Steady Count")
     
-    def _getNewStockPrice(self):
+    def _getNewStockPrice(self, client):
         if (Settings.config.getboolean("default", "pullFromDB", fallback=False) == True):
             #get data from db (simulation)
             if (self._lastUpdateTime == ""):
                 self._lastUpdateTime = Settings.config.get("simulationSettings", "startTime" )
             else:
                 self._lastUpdateTime = self._lastUpdateTime + datetime.timedelta(seconds = Settings.config.getfloat("default", "refreshRate"))
-            jsonResponse = brokerClient.Client.getQuotes( pullFromDb=True, time=self._lastUpdateTime )
+            #TODO: Fix me. pullFromDB is no longer active
+            jsonResponse = client.getQuotes( pullFromDb=True, time=self._lastUpdateTime )
         else:
             #get live stock data from internet
-            jsonResponse = brokerClient.Client.getQuotes( )
+            jsonResponse = client.getQuotes( )
 
         currentData = liveStockData.LiveStockData(jsonResponse, ticker = self.symbol, quote=True)
         if (currentData.isValid()):
@@ -188,7 +189,6 @@ class Stock:
             return currentData.currentPrice
         else:
             self.app_log.info("Invalid Data")
-            self.app_log.info(jsonResponse)
             return 0
 
     def confirmPurchase(self, purchasePrice):
@@ -206,7 +206,6 @@ class Stock:
         self.recentPrices = deque(maxlen=Settings.config.getint("default", "recentPriceLength", fallback=20 ))
         self.lowPriceCounter = 0.0
         self.highPriceCounter = 0.0
-        self.purchasePrice = 0.0
         self.steadyCount = 0.0
 
     def finalCheck(self):

@@ -1,21 +1,21 @@
 class LiveStockData:
 
-    def __init__(self, json, ticker = "",  quote=False):
+    def __init__(self, json, ticker = "", fakeData=False):
         self._reset()
-        if (quote == True):
-            self._parseJsonQuote(ticker, json)
+        if (fakeData == True):
+            self._parseFakeJson(json)
         else:
-            self._parseJson(json)
+            self._parseJsonQuote(ticker, json)
     
-    def _parseJson(self, data):
+    def _parseFakeJson(self, data):
         try:
-            self.symbol = data["content"][0]["key"]          
+            self.symbol = data["content"][0]["key"]  
             self.currentPrice = str(data["content"][0]["LAST_PRICE"])
             self.exchange = str(data["content"][0]["EXCHANGE_NAME"])
             self.valid = True
         except:
             self._reset()
-    
+
     def _parseJsonQuote(self, ticker, data):
         try:
             self.symbol = data[ticker]['symbol'].upper()
@@ -29,8 +29,7 @@ class LiveStockData:
                 self.exchange = str(data[ticker.lower()]["exchangename"]).upper()
                 self.valid = True
             except:
-                print("Can't parse json quote")
-                print(data)
+                print("Can't parse json quote for: " + ticker)
                 self._reset()
                 return
         #check for empty ticker
@@ -46,7 +45,7 @@ class LiveStockData:
     def isValid(self):
         return self.valid
     
-    def isValidExchange(self):
-        if (self.exchange == "NASD" or self.exchange == "NYSE" or self.exchange == "AMEX"):
+    def isValidExchange(self, validExchanges):
+        if (self.exchange in validExchanges):
             return True
         return False

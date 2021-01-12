@@ -2,7 +2,7 @@ import datetime
 from logging import currentframe
 import stock
 import liveStockData
-import fakeTrading
+
 import time
 from prettytable import PrettyTable
 import config
@@ -14,7 +14,6 @@ import dbConnection
 
 
 #CHANGEME FOR REAL TRADING
-account = fakeTrading.FakeAccount()
 logging.getLogger().addHandler(logging.StreamHandler())
 log_formatter = logging.Formatter(fmt='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logFile = 'logs//db.log'
@@ -65,6 +64,7 @@ def main():
         else:
             app_log.info("Failed DB Insert. " + str(stockPriceRawData))
 
+        #get data every .7 seconds
         time.sleep(.7)
 
         if (config.Settings.isUpdated() == True):

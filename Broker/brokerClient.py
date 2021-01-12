@@ -1,8 +1,7 @@
 from logging import NullHandler
-import config
-from tda import auth, client
-import config
-import dbConnection
+from config import Settings
+from tda import auth
+from dbConnection import *
 import datetime
 import json
 
@@ -19,10 +18,10 @@ class Client(object):
 
     @classmethod
     def authorize( cls ):
-        if (config.Settings.config.getboolean("default", "pullFromDB") == False):
-            cls._token_path = config.Settings.config.get("tdAccountSettings", "tokenPath" )
-            cls._api_key = config.Settings.config.get("tdAccountSettings", "apiKey" )
-            cls._redirect_uri = config.Settings.config.get("tdAccountSettings", "redirectUri" )
+        if (Settings.config.getboolean("default", "pullFromDB") == False):
+            cls._token_path = Settings.config.get("tdAccountSettings", "tokenPath" )
+            cls._api_key = Settings.config.get("tdAccountSettings", "apiKey" )
+            cls._redirect_uri = Settings.config.get("tdAccountSettings", "redirectUri" )
             try:
                 cls._c = auth.client_from_token_file(cls._token_path, cls._api_key)
             except FileNotFoundError:
@@ -34,14 +33,14 @@ class Client(object):
     @classmethod
     def getQuotes( cls , pullFromDb = False, time = ""):
         if (pullFromDb == True):
-            if (dbConnection.PostgreSQL.isInitialized == False):
-                dbConnection.PostgreSQL.isInitialized.setup()
+            if (PostgreSQL.isInitialized == False):
+                PostgreSQL.isInitialized.setup()
             
             #strftime("%Y-%m-%d %H:%M:%S")'
             time2 = time.strftime("%Y-%m-%d %H:%M:%S")
             time1 = (time - datetime.timedelta(milliseconds= 2500)).strftime("%Y-%m-%d %H:%M:%S")
             selectQuery = "SELECT rawjson, key FROM public.rawstockdata WHERE timestamp BETWEEN '{}' AND '{}'".format(time1, time2)
-            data = dbConnection.PostgreSQL.select(selectQuery)
+            data = PostgreSQL.select(selectQuery)
             if (len(data) > 0):
                 x = json.dumps(data[-1][0])
                 y = json.loads(x)
@@ -51,7 +50,7 @@ class Client(object):
         else:
             returnData = ""
             try:
-                returnData = cls._c.get_quotes(config.Settings.getWatchStocks()).json()
+                returnData = cls._c.get_quotes(Settings.getWatchStocks()).json()
             except:
                 returnData = ""
             return returnData

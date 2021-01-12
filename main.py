@@ -2,19 +2,21 @@ import datetime
 from logging import currentframe
 import stock
 import liveStockData
-import fakeTrading
 import time
 from prettytable import PrettyTable
-import config
+from config import Settings
 import logging
 from logging.handlers import TimedRotatingFileHandler
 import datetime
-import brokerClient
 import dbConnection
+import Broker.SimulationBroker
+import Broker.TdAmeritrade
+import utility
 
 
 #CHANGEME FOR REAL TRADING
-account = fakeTrading.FakeAccount()
+broker = ""
+#broker = Broker.SimulationBroker.SimulationBroker()
 logging.getLogger().addHandler(logging.StreamHandler())
 log_formatter = logging.Formatter('%(message)s')
 logFile = 'logs//app.log'
@@ -45,41 +47,47 @@ def printStockData(stocksToWatch):
 
 
 def checkToSellOrBuy(curStock):
-    if (account.doIOwnThisStock(curStock.symbol) ):
+    if (broker.account.doIOwnThisStock(curStock.symbol) ):
         checkToSell(curStock)
     else:
         checkToBuy(curStock)
 
 def checkToSell(curStock):
     if (curStock.shouldISell() == True):
-        account.sellStock( curStock )
+        app_log.info("Sold: " + curStock.symbol + " at: $" + str( curStock.currentPrice)  )
+        app_log.info("Purchased: " + curStock.symbol + " at: $" + str(curStock.purchasePrice))
+        broker.account.sellStock( curStock.symbol, limitPrice=curStock.currentPrice )
+        curStock.purchasePrice = 0.0
         printStockData([curStock])
 
 def checkToBuy(curStock):
     if (curStock.shouldIPurchase() == True):
         #TODO get the actual purchase price
-        rawJson = getStockQuotes()
-        currentData = liveStockData.LiveStockData(rawJson, ticker = curStock.symbol, quote=True)
-        purchasePrice = account.purchaseStock(currentData )
+        rawJson = broker.getQuotes( curStock.symbol, time=lastUpdateTime )
+        currentData = liveStockData.LiveStockData(rawJson, ticker = curStock.symbol)
+        purchasePrice = broker.account.purchaseStock(currentData.symbol, limitPrice = currentData.currentPrice )
         printStockData([curStock])
         curStock.confirmPurchase(purchasePrice)
+        app_log.info("Bought: " + curStock.symbol + " at $" + str(purchasePrice))
+
 
 def processData(jsonResponse, curStock):
-    currentData = liveStockData.LiveStockData(jsonResponse, ticker = curStock.symbol, quote=True)
+    currentData = liveStockData.LiveStockData(jsonResponse, ticker = curStock.symbol)
     if (currentData.isValid()):
-        if (currentData.isValidExchange()):
+        validExchanges = Settings.config.get("default", "validExchanges" )
+        if (currentData.isValidExchange(validExchanges)):
             curStock.updatePrice(currentData.currentPrice)
         else:
             app_log.info("Invalid Exchange for stock: " + currentData.symbol + " " + currentData.exchange)
     else:
         app_log.info("Invalid Data")
-        app_log.info(jsonResponse)
+        #app_log.info(jsonResponse)
 
-    checkToSellOrBuy(curStock)
+    checkToSellOrBuy(curStock, broker)
 
 def updateWatchStocks(currentStocksWatching):
     updatedStocksToWatch = []
-    newStocksToWatch = config.Settings.getWatchStocks()
+    newStocksToWatch = Settings.getWatchStocks()
     for newStockTicker in newStocksToWatch:
         found = False
         for currentStock in currentStocksWatching:
@@ -95,17 +103,31 @@ def updateWatchStocks(currentStocksWatching):
         #need to sell these stocks if holding
         app_log.info("check to sell:")
         for holding in currentStocksWatching:
-            if (account.doIOwnThisStock(holding.symbol) ):
-                account.sellStock(holding)
+            if (broker.account.doIOwnThisStock(holding.symbol) ):
+                broker.account.sellStock(holding.symbol, limitPrice=holding.currentPrice)
+                app_log.info("Sold: " + holding.symbol + " at: $" + str( holding.currentPrice)  )
+                app_log.info("Purchased: " + holding.symbol + " at: $" + str(holding.purchasePrice)  )
+                
     return updatedStocksToWatch
 
-def printAllInfo(stocksToWatch, c):
+
+def printHoldings(watchList):
+    table = PrettyTable()
+    table.title = "Holdings"
+    table.field_names = ["Stock", "Purchase Price", "Current Price", "% Change"]
+    for stock in watchList:
+        if (stock.purchasePrice > 0):
+            table.add_row([stock.symbol, str(stock.purchasePrice), stock.currentPrice, 
+            str(utility.getDifferencePercentage(stock.purchasePrice, stock.currentPrice ))])
+    app_log.info(table)
+
+def printAllInfo(stocksToWatch):
     now = datetime.datetime.now()
-    if (config.Settings.config.getboolean("default", "pullFromDB", fallback=False) == True):
+    if (Settings.config.getboolean("default", "pullFromDB", fallback=False) == True):
         current_time = lastUpdateTime
-        if (config.Settings.config.getboolean("simulationSettings", "logToFile", fallback=True) == False):
+        if (Settings.config.getboolean("simulationSettings", "logToFile", fallback=True) == False):
             print(current_time)
-            print("Today's PL %:" + str(account.pl))
+            print("Today's PL %:" + str(broker.account.pl))
             print("")
             return
     else:
@@ -113,79 +135,91 @@ def printAllInfo(stocksToWatch, c):
 
     app_log.info(current_time)
     printStockData(stocksToWatch)
-    account.printHoldings(stocksToWatch)
-    app_log.info("Today's PL %:" + str(account.pl))
-    app_log.info("")
+    printHoldings(stocksToWatch)
 
-def getStockQuotes():
-    global lastUpdateTime
-    if (config.Settings.config.getboolean("default", "pullFromDB", fallback=False) == True):
-        #get data from db (simulation)
-        stockPriceRawData = brokerClient.Client.getQuotes( pullFromDb=True, time=lastUpdateTime )
-        #lastUpdateTime = lastUpdateTime + datetime.timedelta(seconds = config.Settings.config.getfloat("default", "refreshRate"))
-    else:
-        #get live stock data from internet
-        stockPriceRawData = brokerClient.Client.getQuotes( )
-    return stockPriceRawData
+    app_log.info("Today's PL %:" + str(broker.account.pl))
+    app_log.info("")
 
 def updateBufferStocksData(stocksToWatch):
     global lastUpdateTime
-    updateRate = config.Settings.config.getfloat("default", "pullDataRate", fallback=1)
-    pullFromDb = config.Settings.config.getboolean("default", "pullFromDB", fallback=False)
-    refreshRate = config.Settings.config.getfloat("default", "refreshRate", fallback=5)
+    updateRate = Settings.config.getfloat("default", "pullDataRate", fallback=1)
+    pullFromDb = Settings.config.getboolean("default", "pullFromDB", fallback=False)
+    refreshRate = Settings.config.getfloat("default", "refreshRate", fallback=5)
     
     if (pullFromDb):
         lastUpdate = lastUpdateTime
     else:
         lastUpdate = datetime.datetime.now()
     
-    exitTime = lastUpdate + datetime.timedelta(seconds = (refreshRate - .2))
+    exitTime = lastUpdate + datetime.timedelta(seconds = (refreshRate))
 
     while (lastUpdate <= exitTime ):
         if (pullFromDb):
-            time.sleep(config.Settings.config.getfloat("simulationSettings", "refreshRate", fallback=.1))
+            time.sleep(Settings.config.getfloat("simulationSettings", "refreshRate", fallback=.1))
             lastUpdate = lastUpdate + datetime.timedelta(seconds = updateRate)
             lastUpdateTime = lastUpdate
         else:
             time.sleep(updateRate)
             lastUpdate = datetime.datetime.now()
 
-        if (pullFromDb == True):
+        listOfTickers = []
+        for x in stocksToWatch:
+            listOfTickers.append(x.symbol)
+
+        #if (pullFromDb == True):
             #get data from db (simulation)
-            stockPriceRawJsonData = brokerClient.Client.getQuotes( pullFromDb=True, time=lastUpdate )
-        else:
+        #    stockPriceRawJsonData = client.getQuotes( listOfTickers, time=lastUpdate )
+        #else:
             #get live stock data from internet
-            stockPriceRawJsonData = brokerClient.Client.getQuotes( )
+        stockPriceRawJsonData = broker.getQuotes( listOfTickers, time=lastUpdate )
         
         for curStock in stocksToWatch:
-            currentData = liveStockData.LiveStockData(stockPriceRawJsonData, ticker = curStock.symbol, quote=True)
+            currentData = liveStockData.LiveStockData(stockPriceRawJsonData, ticker = curStock.symbol)
             if (currentData.isValid()):
-                if (currentData.isValidExchange()):
+                validExchanges = Settings.config.get("default", "validExchanges" )
+                if (currentData.isValidExchange(validExchanges)):
                     curStock.updateRecentPriceList(currentData.currentPrice)
                 else:
-                    app_log.info("Invalid Exchange for stock: " + currentData.symbol + " " + currentData.exchange)
+                    app_log.info("Invalid Exchange for stock: " + currentData.symbol + " Exchange: " + currentData.exchange)
             else:
                 app_log.info("Invalid Data")
-                app_log.info(stockPriceRawJsonData)
+                #app_log.info(stockPriceRawJsonData)
 
 def main():
-    config.Settings.load("F:\\My Documents\\Code\\PennyStockTrading\\config.ini")
-    token_path = config.Settings.config.get("tdAccountSettings", "tokenPath" )
-    api_key = config.Settings.config.get("tdAccountSettings", "apiKey" )
-    redirect_uri = config.Settings.config.get("tdAccountSettings", "redirectUri" )
+    global broker
+    Settings.load("F:\\My Documents\\Code\\PennyStockTrading\\config.ini")
+    token_path = Settings.config.get("tdAccountSettings", "tokenPath" )
+    api_key = Settings.config.get("tdAccountSettings", "apiKey" )
+    redirect_uri = Settings.config.get("tdAccountSettings", "redirectUri" )
     
-    if (config.Settings.config.getboolean("default", "logDataToDB", fallback=False ) == True or
-    config.Settings.config.getboolean("default", "pullFromDB", fallback=False ) == True):
+    if (Settings.config.getboolean("default", "logDataToDB", fallback=False ) == True or
+    Settings.config.getboolean("default", "pullFromDB", fallback=False ) == True):
         dbConnection.PostgreSQL.setup()
 
-    brokerClient.Client.authorize()
+    if (Settings.config.getboolean("default", "pullFromDB", fallback=False ) == True):
+        broker = Broker.SimulationBroker.SimulationBroker()
+        broker.newAccount(1)
+    else:
+        broker = Broker.TdAmeritrade.TdBroker(token_path, api_key, redirect_uri)
+        broker.newAccount(132223)
 
     stocksToWatch = []
-    for i in config.Settings.getWatchStocks():
+    for i in Settings.getWatchStocks():
         stocksToWatch.append(stock.Stock(i.upper()))
+    
+    datetime.datetime.strptime(Settings.config.get("default", "startTime"), "%H:%M:%S")
+
+    now = datetime.datetime.now()
+    startTime = datetime.datetime.strptime(Settings.config.get("default", "startTime"), "%H:%M:%S")
+    
+    while (now.time() < startTime.time()):
+        time.sleep(5)
+        app_log.info("Waiting to start")
+        now = datetime.datetime.now()
+
 
     global lastUpdateTime 
-    lastUpdateTime = datetime.datetime.strptime(config.Settings.config.get("simulationSettings", "startTime"), "%Y-%m-%d %H:%M:%S")
+    lastUpdateTime = datetime.datetime.strptime(Settings.config.get("simulationSettings", "startTime"), "%Y-%m-%d %H:%M:%S")
 
     startTimer = time.time()
     endTimer = time.time()
@@ -210,28 +244,27 @@ def main():
             processData(stockPriceRawData, x)
         ------------------------
         '''
-        printAllInfo(stocksToWatch,brokerClient.Client._c)
 
-        #only sleep if we don't have any stocks being held
-        #decrease sleep on stock buy
-        if (config.Settings.config.getboolean("default", "pullFromDB", fallback=False) == True):
-            if (lastUpdateTime >  datetime.datetime.strptime(config.Settings.config.get("simulationSettings", "endTime"), "%Y-%m-%d %H:%M:%S") ):
-                app_log.info("Ending simulation")
-                return
+        printAllInfo(stocksToWatch)
+
             
-        #    time.sleep(config.Settings.config.getfloat("simulationSettings", "refreshRate", fallback=.1))
-        #else:
-        #    time.sleep(config.Settings.config.getfloat("default", "refreshRate", fallback=5))
-
-        if (config.Settings.isUpdated() == True):
+        if (Settings.isUpdated() == True):
             app_log.info("Configure change detected")
             newStocksToWatch = updateWatchStocks(stocksToWatch)
             if (len(newStocksToWatch) > 0):
                 stocksToWatch = newStocksToWatch
+            else:
+                stocksToWatch = []
         
         endTimer = time.time()
         print(endTimerMid -  startTimer)
         print(endTimer - startTimer )
+
+        #Exit program if simulation is over
+        if (Settings.config.getboolean("default", "pullFromDB", fallback=False) == True):
+            if (lastUpdateTime >  datetime.datetime.strptime(Settings.config.get("simulationSettings", "endTime"), "%Y-%m-%d %H:%M:%S") ):
+                app_log.info("Ending simulation")
+                return
 
 if __name__ == "__main__":
     main()
