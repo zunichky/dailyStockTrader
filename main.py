@@ -12,14 +12,18 @@ import dbConnection
 import Broker.SimulationBroker
 import Broker.TdAmeritrade
 import utility
+import os
 
-
+CONFIGPATH = "config.ini"
+LOGGPATH = "logs"
 #CHANGEME FOR REAL TRADING
 broker = ""
 #broker = Broker.SimulationBroker.SimulationBroker()
 logging.getLogger().addHandler(logging.StreamHandler())
 log_formatter = logging.Formatter('%(message)s')
-logFile = 'logs//app.log'
+if not os.path.exists(LOGGPATH):
+    os.makedirs(LOGGPATH)
+logFile = LOGGPATH + '//app.log'
 my_handler = TimedRotatingFileHandler(logFile,
                                        when="h",
                                        interval=1,
@@ -187,7 +191,7 @@ def updateBufferStocksData(stocksToWatch):
 
 def main():
     global broker
-    Settings.load("F:\\My Documents\\Code\\PennyStockTrading\\config.ini")
+    Settings.load(CONFIGPATH)
     token_path = Settings.config.get("tdAccountSettings", "tokenPath" )
     api_key = Settings.config.get("tdAccountSettings", "apiKey" )
     redirect_uri = Settings.config.get("tdAccountSettings", "redirectUri" )
