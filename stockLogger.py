@@ -1,7 +1,6 @@
 import datetime
 from logging import currentframe
 import stock
-import liveStockData
 
 import time
 from prettytable import PrettyTable

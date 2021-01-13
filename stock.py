@@ -2,11 +2,6 @@ from collections import deque
 from config import Settings
 import logging
 from prettytable import PrettyTable
-from Broker.brokerClient import *
-import liveStockData
-import time
-import datetime
-
 class Stock:
     
     def __init__(self, ticker):
@@ -21,6 +16,9 @@ class Stock:
         self.recentPrices = deque(maxlen=Settings.config.getint("default", "recentPriceLength", fallback=20 ))
         self.triggered = False
         self.purchasePrice = 0.0
+        self.plDollars = 0
+        self.plPercent = 0
+        self.sharesHeld = 0
         self.steadyCount = 0.0
         #1 for up, 0 f or down
         self.lastUpdated = 0
@@ -28,6 +26,7 @@ class Stock:
         self._lastUpdateTime = ""
         self._recentPrices = []
         self._previousRecentPrices = []
+        self.exchange = ""
 
     def getSwingPercentage(self, highPrice, lowPrice):
         if (highPrice == lowPrice):
@@ -169,27 +168,6 @@ class Stock:
         elif (self.steadyCount >= Settings.config.getfloat("sellSettings", "steadyCount", fallback=20 )):
             self.triggered = False
             self.resetData("_sellTrigger Steady Count")
-    
-    def _getNewStockPrice(self, client):
-        if (Settings.config.getboolean("default", "pullFromDB", fallback=False) == True):
-            #get data from db (simulation)
-            if (self._lastUpdateTime == ""):
-                self._lastUpdateTime = Settings.config.get("simulationSettings", "startTime" )
-            else:
-                self._lastUpdateTime = self._lastUpdateTime + datetime.timedelta(seconds = Settings.config.getfloat("default", "refreshRate"))
-            #TODO: Fix me. pullFromDB is no longer active
-            jsonResponse = client.getQuotes( pullFromDb=True, time=self._lastUpdateTime )
-        else:
-            #get live stock data from internet
-            jsonResponse = client.getQuotes( )
-
-        currentData = liveStockData.LiveStockData(jsonResponse, ticker = self.symbol, quote=True)
-        if (currentData.isValid()):
-            #self.updatePrice(currentData.currentPrice)
-            return currentData.currentPrice
-        else:
-            self.app_log.info("Invalid Data")
-            return 0
 
     def confirmPurchase(self, purchasePrice):
         if (float(purchasePrice) > 0):
@@ -208,29 +186,11 @@ class Stock:
         self.highPriceCounter = 0.0
         self.steadyCount = 0.0
 
-    def finalCheck(self):
-        #want to check to make sure stock is still going up
-        self.triggered = False
-        #self.highPriceCounter = Settings.config.getfloat("buySettings", "highPriceCounter", fallback =2 ) - 1
-        
-        for x in range(Settings.config.getint("buySettings", "finalCheck", fallback=.2 )):
-            #another stock read, if it went up, will trigger a buy
-            time.sleep(Settings.config.getfloat("buySettings", "finalCheckSleep", fallback=.2 ))
-            newPrice = self._getNewStockPrice()
-            self.updatePrice(newPrice)
-            #if (self.isTriggered()):
-            #   return
-
     def shouldIPurchase(self):
         if (self.isTriggered()):
-            if (Settings.config.getfloat("buySettings", "finalCheck", fallback=1 ) > 0 ):
-                self.finalCheck()
-            if (self.isTriggered()):
-                self.printStockData()
-                print("Should Buy Now")
-                return True
-            else:
-                self.app_log.info("Final check failed on: " + self.symbol)
+            self.printStockData()
+            print("Should Buy Now")
+            return True
         return False
 
     def shouldISell(self):
@@ -242,3 +202,13 @@ class Stock:
 
     def isTriggered(self):
         return self.triggered
+
+    def isValid(self):
+        if (self.symbol != "" and self.isValidExchange()):
+            return True
+        return False
+            
+    def isValidExchange(self):
+        if (self.exchange.upper() in Settings.config.get("default", "validExchanges" )):
+            return True
+        return False

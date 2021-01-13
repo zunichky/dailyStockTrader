@@ -1,36 +1,66 @@
+
 from Broker.TdAmeritrade import TdAccount
 from .AccountAbstract import *
 import datetime
 import json
 import dbConnection
-from liveStockData import LiveStockData
 import utility
 import tdAccount
+from stock import Stock
 
 class SimulationAccount(Account):
 
     def __init__(self, settings):
         super().__init__(settings)
+        self._orderIdCounter = 0
     
-    def purchaseStock(self, ticker,  limitPrice = 0):
-        starterData = json.loads('{"service":"QUOTE","timestamp":1609883612701,"command":"SUBS","content":[{"key":"KEY","delayed":false,"BID_PRICE":0,"ASK_PRICE":0,"LAST_PRICE":0,"BID_SIZE":46,"ASK_SIZE":5,"ASK_ID":"P","BID_ID":"P","TOTAL_VOLUME":332515088,"LAST_SIZE":5,"TRADE_TIME":60811,"QUOTE_TIME":60812,"HIGH_PRICE":2.99,"LOW_PRICE":1.89,"BID_TICK":" ","CLOSE_PRICE":1.78,"EXCHANGE_ID":"q","MARGINABLE":true,"SHORTABLE":true,"QUOTE_DAY":18632,"TRADE_DAY":18632,"VOLATILITY":0.1592,"DESCRIPTION":"Jaguar Health, Inc. - Common Stock Status Alert: Deficient","LAST_ID":"P","DIGITS":4,"OPEN_PRICE":2.21,"NET_CHANGE":0.27,"HIGH_52_WEEK":2.99,"LOW_52_WEEK":0.185,"PE_RATIO":0.24,"EXCHANGE_NAME":"NASD","DIVIDEND_DATE":" ","IS_REGULAR_MARKET_QUOTE":true,"REGULAR_MARKET_LAST_PRICE":1.95,"REGULAR_MARKET_LAST_SIZE":1485,"REGULAR_MARKET_TRADE_TIME":57600,"REGULAR_MARKET_TRADE_DAY":18632,"REGULAR_MARKET_NET_CHANGE":0.17,"SECURITY_STATUS":"Normal","MARK":2.04,"QUOTE_TIME_IN_LONG":1609883612436,"TRADE_TIME_IN_LONG":1609883611910,"REGULAR_MARKET_TRADE_TIME_IN_LONG":1609880400868}]}')
-        starterData["content"][0]["LAST_PRICE"] = limitPrice
-        starterData["content"][0]["key"] = ticker
-        purchasedStock = LiveStockData(starterData, fakeData = True)
-        if (purchasedStock.isValid()):
-            self.currentHoldings.append(purchasedStock)
-            return limitPrice
-        else:
-            self.app_log.info("invalid stock initalization")
-            return 0
+    def _purchaseStock(self, ticker,  price = 0):
+        stock = Stock(ticker)
+        stock.symbol = ticker
+        stock.currentPrice = price
+        stock.purchasePrice = price
+        stock.exchange = "UNKNOWN"
+        self.currentHoldings.append(stock)
+    
+    def purchaseStockMarket(self, ticker, shares = 1, price = 0):
+        self._orderIdCounter = self._orderIdCounter + 1
+        order = Order()
+        order.orderId = self._orderIdCounter
+        order.quantity = shares
+        order.status = results["FILLED"]
+        order.targetPrice = price
+        self._purchaseStock(ticker, price)
+        print("Purchase fake: " + ticker )
+        return order
+    
+    def purchaseStockLimit(self, ticker, shares, price ):
+        return self.purchaseStockMarket(ticker, shares = shares, price = price)
 
-    def sellStock(self, ticker, limitPrice = 0):
+    def _sellStock(self, ticker, price = 0):
         for i in range(len(self.currentHoldings)):
             print(self.currentHoldings[i].symbol)
             if (self.currentHoldings[i].symbol == ticker ):
-                self.pl = self.pl + utility.getDifferencePercentage(float(self.currentHoldings[i].currentPrice), float(limitPrice) )
+                self.pl = self.pl + utility.getDifferencePercentage(float(self.currentHoldings[i].currentPrice), float(price) )
                 del self.currentHoldings[i]
                 break
+    
+    def sellStockMarket(self, ticker, shares = 1, price = 0):
+        for x in self.currentHoldings:
+            if (x.symbol == ticker):
+                shares = x.sharesHeld
+                break
+        self._orderIdCounter = self._orderIdCounter + 1
+        order = Order()
+        order.orderId = self._orderIdCounter
+        order.quantity = shares
+        order.status = results["FILLED"]
+        order.targetPrice = price
+        self._sellStock(ticker, price)
+        print("Sell fake: " + ticker)
+        return order
+    
+    def sellStockLimit(self, ticker, shares, limitPrice = 0):
+        return self.sellStockMarket(ticker, shares = shares, price=limitPrice)
 
     def doIOwnThisStock(self, ticker):
         for y in self.currentHoldings:
@@ -40,6 +70,23 @@ class SimulationAccount(Account):
     
     def getAccountBalance(self):
         print("$100 Fake")
+    
+    def getCurrentHoldings(self):
+        return self.currentHoldings
+    
+    def updateAccountBalance(self):
+        self.cashBalance = 1
+        self.availableFunds = 1
+        self.buyingPower = 1
+        self.dayTradingBuyingPower = 1
+
+    def updateCurrentHoldings(self):
+        #list of stock classes
+        self.currentHoldings = []
+
+    def updateCurrentOrders(self):
+        #lsit of order classes
+        self.currentOrders = []
 
 class SimulationBroker(Broker):
     _token_path = ""
@@ -59,6 +106,13 @@ class SimulationBroker(Broker):
     def addBroker(self, broker):
         self.broker = broker
 
+    def getQuote(self, ticker, time=""):
+        stockList = self.getQuotes([ticker], time)
+        for x in stockList:
+            if (x.symbol == ticker):
+                return x
+        return ""
+
     def getQuotes( self, tickerList, time=""):
         if (self.pullFromDb == True):
             if (dbConnection.PostgreSQL.isInitialized == False):
@@ -72,7 +126,33 @@ class SimulationBroker(Broker):
             if (len(data) > 0):
                 x = json.dumps(data[-1][0])
                 y = json.loads(x)
-                return y
+                return self.parseQuote(y)
             return ""
         else:
             return self.broker.getQuotes(tickerList, time)
+    
+    def parseQuote(self, json):
+        items = ""
+        stockList = []
+        try:
+            items = json.items()
+        except Exception as ex:
+            print("invalid JSON")
+            return stockList
+        
+        for (k, v) in items:
+            curStock = Stock(k)
+            try:
+                curStock.symbol = v['symbol'].upper()
+                curStock.currentPrice = v["lastPrice"]
+                curStock.exchange = str(v["exchangeName"]).upper()
+            except:
+                    try:
+                        curStock.currentPrice = v["lastprice"]
+                        curStock.exchange = v["exchangename"].upper()
+                    except:
+                        print("Can't parse json quote for: " + curStock.symbol)
+            if (curStock.isValid()):
+                stockList.append(curStock)
+
+        return stockList

@@ -12,3 +12,6 @@ logs/*
 __pycache__/*
 Token/*
 token.txt
+Broker/__pycache__/*
+redditStocks/__pycache__/*
+redditStocks/table_records.txt
