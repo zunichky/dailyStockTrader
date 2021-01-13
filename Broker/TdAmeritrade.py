@@ -16,6 +16,12 @@ class TdAccount(Account):
     def sellStock(self, ticker, limitPrice = 0):
         print("Sell Real: " + ticker)
     
+    def doIOwnThisStock(self, ticker):
+        for y in self.currentHoldings:
+            if (y.symbol == ticker):
+                return True
+        return False
+
     def getAccountBalance(self):
         print("$100 Real")
     
@@ -33,7 +39,7 @@ class TdBroker(Broker):
         self._token_path = tokenPath
         self._api_key = apiKey
         self._redirect_uri = redirectUri
-            
+        
         try:
             self._c = auth.client_from_token_file(self._token_path, self._api_key)
         except FileNotFoundError:

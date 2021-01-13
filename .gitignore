@@ -11,3 +11,4 @@ launch.json
 logs/*
 __pycache__/*
 Token/*
+token.txt

@@ -200,12 +200,25 @@ def main():
     Settings.config.getboolean("default", "pullFromDB", fallback=False ) == True):
         dbConnection.PostgreSQL.setup()
 
-    if (Settings.config.getboolean("default", "pullFromDB", fallback=False ) == True):
-        broker = Broker.SimulationBroker.SimulationBroker()
+    #TODO: Make this setting generic/not hardcoded
+    accountType = Settings.config.get("default", "account", fallback="").strip().lower()
+    if (accountType == "fakemoney"):
+        #TODO really need to rewrite the non db stuff. 
+        # Possibility make broker and account info separate classes
+        # We then would have a Broker, Account, StockData classes
+        if (Settings.config.getboolean("default", "pullFromDb", fallback=False ) == True):
+            broker = Broker.SimulationBroker.SimulationBroker()
+        else:
+            brokerTd = Broker.TdAmeritrade.TdBroker(token_path, api_key, redirect_uri)
+            brokerTd.newAccount(132223)
+            broker = Broker.SimulationBroker.SimulationBroker(pullFromDb=False, broker=brokerTd)
         broker.newAccount(1)
-    else:
+    elif(accountType == "tdameritrade" ):
         broker = Broker.TdAmeritrade.TdBroker(token_path, api_key, redirect_uri)
         broker.newAccount(132223)
+    else:
+        app_log.info("Invalid Account in settings")
+        return
 
     stocksToWatch = []
     for i in Settings.getWatchStocks():

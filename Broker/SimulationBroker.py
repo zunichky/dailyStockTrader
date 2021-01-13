@@ -5,6 +5,7 @@ import json
 import dbConnection
 from liveStockData import LiveStockData
 import utility
+import tdAccount
 
 class SimulationAccount(Account):
 
@@ -45,24 +46,33 @@ class SimulationBroker(Broker):
     _api_key = ""
     _redirect_uri = ""
     account = ""
+    pullFromDb = True
+    broker = ""
     
-    def __init__(self):
-        pass
+    def __init__(self, pullFromDb, broker = ""):
+        self.pullFromDb = pullFromDb
+        self.broker = broker 
     
     def newAccount(self, settings):
         self.account = SimulationAccount(settings)
+    
+    def addBroker(self, broker):
+        self.broker = broker
 
-    def getQuotes( self,tickerList, time=""):
-        if (dbConnection.PostgreSQL.isInitialized == False):
-            dbConnection.PostgreSQL.isInitialized.setup()
-            
-        #strftime("%Y-%m-%d %H:%M:%S")'
-        time2 = time.strftime("%Y-%m-%d %H:%M:%S")
-        time1 = (time - datetime.timedelta(milliseconds= 2500)).strftime("%Y-%m-%d %H:%M:%S")
-        selectQuery = "SELECT rawjson, key FROM public.rawstockdata WHERE timestamp BETWEEN '{}' AND '{}'".format(time1, time2)
-        data = dbConnection.PostgreSQL.select(selectQuery)
-        if (len(data) > 0):
-            x = json.dumps(data[-1][0])
-            y = json.loads(x)
-            return y
-        return ""
+    def getQuotes( self, tickerList, time=""):
+        if (self.pullFromDb == True):
+            if (dbConnection.PostgreSQL.isInitialized == False):
+                dbConnection.PostgreSQL.isInitialized.setup()
+                
+            #strftime("%Y-%m-%d %H:%M:%S")'
+            time2 = time.strftime("%Y-%m-%d %H:%M:%S")
+            time1 = (time - datetime.timedelta(milliseconds= 2500)).strftime("%Y-%m-%d %H:%M:%S")
+            selectQuery = "SELECT rawjson, key FROM public.rawstockdata WHERE timestamp BETWEEN '{}' AND '{}'".format(time1, time2)
+            data = dbConnection.PostgreSQL.select(selectQuery)
+            if (len(data) > 0):
+                x = json.dumps(data[-1][0])
+                y = json.loads(x)
+                return y
+            return ""
+        else:
+            return self.broker.getQuotes(tickerList, time)
