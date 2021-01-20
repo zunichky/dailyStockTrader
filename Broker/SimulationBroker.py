@@ -1,4 +1,3 @@
-
 from Broker.TdAmeritrade import TdAccount
 from .AccountAbstract import *
 import datetime
@@ -55,6 +54,7 @@ class SimulationAccount(Account):
         order.quantity = shares
         order.status = results["FILLED"]
         order.targetPrice = price
+        order.sellPrice = price
         self._sellStock(ticker, price)
         print("Sell fake: " + ticker)
         return order

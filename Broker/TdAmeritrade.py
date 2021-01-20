@@ -4,11 +4,10 @@ from stock import Stock
 from .AccountAbstract import *
 from tda import auth, client
 from tda.orders.equities import equity_buy_limit, equity_buy_market, equity_sell_limit, equity_sell_market
-from tda.orders.common import Duration, OrderType, Session
+from tda.orders.common import Duration
 from tda.utils import Utils
 import json
-import dbConnection
-import datetime
+import utility
 
 class TdAccount(Account): 
     def __init__(self, settings, broker):
@@ -16,15 +15,19 @@ class TdAccount(Account):
         self.broker = broker
 
     def purchaseStockMarket(self, ticker, shares = 1, price = 0):
-        order = equity_buy_market(ticker, shares).set_duration(Duration.FILL_OR_KILL).build()
-        result = self._placeOrder(order)
-        print("Purchase Real: " + ticker )
+        result = Order()
+        if (ticker != "" and shares > 1):
+            order = equity_buy_market(ticker, shares).build()
+            result = self._placeOrder(order)
+            print("Purchase Real: " + ticker )
         return result
     
-    def purchaseStockLimit(self, ticker, shares, limitPrice):
-        order = equity_buy_limit(ticker, shares, limitPrice).set_duration(Duration.FILL_OR_KILL).build()
-        result = self._placeOrder(order)
-        print("Purchase Real: " + ticker )
+    def purchaseStockLimit(self, ticker, shares, price):
+        result = Order()
+        if (ticker != "" and shares > 1):
+            order = equity_buy_limit(ticker, shares, price).set_duration(Duration.FILL_OR_KILL).build()
+            result = self._placeOrder(order)
+            print("Purchase Real: " + ticker )
         return result
 
     def _placeOrder(self, order):
@@ -35,16 +38,27 @@ class TdAccount(Account):
             print(str(e))
         return result
 
-    def sellStockMarket(self, ticker, shares = 100, price = 0):
+    def sellStockMarket(self, ticker, shares = 0, price = 0):
+        purchasePrice = 0
         for x in self.currentHoldings:
             if (x.symbol == ticker):
-                shares = x.sharesHeld
+                if (shares == 0):
+                    shares = x.sharesHeld
+                purchasePrice = x.purchasePrice
                 break
+
         order = equity_sell_market(ticker, shares)
         result = self._placeOrder(order)
         print("Sell Real: " + ticker)
+        if (result != "" and result.orderId > 0):
+            sellPrice = self.getSellingPrice(result.orderId)
+            result.sellPrice = sellPrice
+            self.pl = self.pl + (utility.getDifferencePercentage(purchasePrice, sellPrice))
         return result
     
+    def getSellingPrice(self, orderId):
+        return self.broker.getSellingPrice(orderId)
+
     def sellStockLimit(self, ticker, shares, limitPrice = 0):
         for x in self.currentHoldings:
             if (x.symbol == ticker):
@@ -66,22 +80,38 @@ class TdAccount(Account):
         return self.currentHoldings
 
     def updateAccountBalance(self):
-        jsonRaw = json.loads(self.broker._c.get_account(self.settings).text)
-        currentBalanceDict = responseHelper.getValue(jsonRaw, "securitiesAccount", "currentBalances")
-        self.cashBalance = currentBalanceDict["cashBalance"]
-        self.availableFunds = currentBalanceDict["availableFunds"]
-        self.buyingPower = currentBalanceDict["buyingPower"]
-        self.dayTradingBuyingPower = currentBalanceDict["dayTradingBuyingPower"]
+        currentBalanceDict = None
+        try:
+            jsonRaw = json.loads(self.broker._c.get_account(self.settings).text)
+            currentBalanceDict = responseHelper.getValue(jsonRaw, "securitiesAccount", "currentBalances")
+        except Exception as ex:
+            print("Couldn't update account balance")
+
+        if (currentBalanceDict is not None):
+            try:
+                self.cashBalance = currentBalanceDict["cashBalance"]
+                self.availableFunds = currentBalanceDict["availableFunds"]
+                self.buyingPower = currentBalanceDict["buyingPower"]
+                self.dayTradingBuyingPower = currentBalanceDict["dayTradingBuyingPower"]
+                self.equity = currentBalanceDict["equity"]
+            except Exception as ex:
+                print ("Failed to update account balance")
 
     def updateCurrentHoldings(self):
-        jsonRaw = json.loads(self.broker._c.get_account(self.settings, fields=client.Client.Account.Fields.POSITIONS).text)
-        currentHoldingsJson = responseHelper.getValue(jsonRaw, "securitiesAccount", "positions")
-        self.currentHoldings = responseHelper.parseCurrentHoldings(currentHoldingsJson)
+        try:
+            jsonRaw = json.loads(self.broker._c.get_account(self.settings, fields=client.Client.Account.Fields.POSITIONS).text)
+            currentHoldingsJson = responseHelper.getValue(jsonRaw, "securitiesAccount", "positions")
+            self.currentHoldings = responseHelper.parseCurrentHoldings(currentHoldingsJson)
+        except Exception as ex:
+            print("Couldn't update current holdings")
 
     def updateCurrentOrders(self):
-        jsonRaw = json.loads(self.broker._c.get_account(self.settings, fields=client.Client.Account.Fields.ORDERS).text)
-        listOfOrdersJson = responseHelper.getValue(jsonRaw, "securitiesAccount", "orderStrategies")
-        self.currentOrders = responseHelper.parseCurrentOrders(listOfOrdersJson)
+        try:
+            jsonRaw = json.loads(self.broker._c.get_account(self.settings, fields=client.Client.Account.Fields.ORDERS).text)
+            listOfOrdersJson = responseHelper.getValue(jsonRaw, "securitiesAccount", "orderStrategies")
+            self.currentOrders = responseHelper.parseCurrentOrders(listOfOrdersJson)
+        except Exception as ex:
+            print("Couldn't update current orders")
 
 class TdBroker(Broker):
     _c = ""
@@ -114,10 +144,12 @@ class TdBroker(Broker):
             #parse into stock
             returnDataLst = responseHelper.parseQuote(returnData)
             #TODO REMOVE THIS DB CODE BELOW. Need to return the json so we can log db from main.py
+            '''
             if (self._logToDb):
                 insert_query = "INSERT INTO rawstockdata (timestamp, rawjson) VALUES ('" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  + "','" + str(returnData).replace("'", '"').lower() + "')"
                 if (dbConnection.PostgreSQL.insert(insert_query) == False):
                     print("Failed DB Insert. " + str(returnData))
+            '''
         except:
             returnDataLst = []
         
@@ -130,16 +162,28 @@ class TdBroker(Broker):
                 return x
         return ""
 
-    def executeOrder(self, order):
-        orderResult = self._c.place_order(self.account.settings, order)
-        orderId = Utils(self._c, self.account.settings).extract_order_id(orderResult)
+    def getOrder(self, orderId):
         jsonReponse = json.loads(self._c.get_order(orderId, self.account.settings).text)
         order = TdOrder()
         order.parseExecuteOrderResponse(jsonReponse, orderId)
         return order
+
+    def executeOrder(self, order):
+        orderResult = self._c.place_order(self.account.settings, order)
+        orderId = Utils(self._c, self.account.settings).extract_order_id(orderResult)
+        return self.getOrder(orderId)
     
     def cancelOrder(self,  orderNumber):
         self._c.cancel_order(orderNumber, self.account.settings)
+    
+    def getSellingPrice(self, orderId):
+        jsonReponse = json.loads(self._c.get_order(orderId, self.account.settings).text)
+        price = 0.0
+        try:
+            price = float(jsonReponse["orderActivityCollection"][0]["executionLegs"][0]["price"])
+        except Exception as ex:
+            print("Failed to get selling price")
+        return price
 
 class responseHelper():
     def getValue(data, *lookups):
@@ -220,6 +264,7 @@ class responseHelper():
                     print("Couldn't parse order")
                     print(orderJson)
         return ordersParsed
+
 class TdOrder(Order):
     def __init__(self):
         pass
@@ -228,7 +273,8 @@ class TdOrder(Order):
         try:
             self.status = client.Client.Order.Status[json["status"]]
             self.orderId = orderId
+            self.sellPrice = 0
         except Exception as ex:
             print(str(ex))
             self.status = None
-            self.orderId = None
+            self.orderId = 0

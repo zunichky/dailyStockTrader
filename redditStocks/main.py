@@ -37,10 +37,10 @@ def main():
     parser.add_argument('--interval', nargs='?', const=24, type=int, default=24,
                     help='Choose a time interval in hours to filter the results, default is 24 hours')
 
-    parser.add_argument('--min', nargs='?', const=10, type=int, default=10,
+    parser.add_argument('--min', nargs='?', const=12, type=int, default=12,
                     help='Filter out results that have less than the min score, default is 10')
 
-    parser.add_argument('--yahoo', default=False, action='store_true',
+    parser.add_argument('--yahoo', default=True, action='store_true',
                     help='Using this parameter shows yahoo finance information on the ticker, makes the script run slower!')
 
     parser.add_argument('--sub', nargs='?', const='pennystocks', type=str, default='pennystocks',

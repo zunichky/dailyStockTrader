@@ -57,85 +57,85 @@ def checkToSellOrBuy(curStock):
         checkToBuy(curStock)
 
 def buyConfirmation(orderResult):
+    if (orderResult == ""):
+        app_log.info("orderReseult is blank")
+        return False
     if (orderResult.status.value == results.WORKING.value 
         or orderResult.status.value == results.QUEUED.value):
 
-        app_log.show("Trying to execute")
+        app_log.info("Trying to execute")
         time.sleep(.5)
-        orders = broker.account.updateCurrentOrders()
-        for curOrder in orders:
-            if (curOrder.orderId == orderResult.orderId):
-                if (curOrder.status.value != results.FILLED.value 
-                    and curOrder.status.value != results.CANCELED.value):
-                    broker.cancelOrder(curOrder.orderId)
-                    app_log.show("Cancelling order: " + str(curOrder.orderId))
-                    return False
-                else:
-                    app_log.show("Result on retry for order: " + str(curOrder.orderId) + " - " +  str(curOrder.status.value))
-                    return True
+        curOrder = broker.getOrder(orderResult.orderId)
+        if (curOrder.orderId == orderResult.orderId):
+            if (curOrder.status.value != results.FILLED.value 
+                and curOrder.status.value != results.CANCELED.value):
+                broker.cancelOrder(curOrder.orderId)
+                app_log.info("Cancelling order: " + str(curOrder.orderId))
+                return False
+            else:
+                app_log.info("Result on retry for order: " + str(curOrder.orderId) + " - " +  str(curOrder.status.value))
+                return True
         app_log.info("Can't find order id in orders: " + str(orderResult.orderId))
         return False
     elif (orderResult.status.value != results.FILLED.value and orderResult.status.value != results.CANCELED.value):
         broker.cancelOrder(orderResult.orderId)
-        app_log.show("Cancelling order: " + str(orderResult.orderId))
+        app_log.info("Cancelling order: " + str(orderResult.orderId))
         return False
     elif (orderResult.status.value == results.CANCELED.value):
-        app_log.show("Order cancelled by TD: " + str(orderResult.orderId))
+        app_log.info("Order cancelled by TD: " + str(orderResult.orderId))
         return False
     return True
 
 def sellConfirmation(orderResult):
+    if (orderResult == ""):
+        app_log.info("orderReseult is blank")
+        return False
     if (orderResult.status.value == results.WORKING.value 
         or orderResult.status.value == results.QUEUED.value):
 
-        app_log.show("Trying to execute sell")
+        app_log.info("Trying to execute sell")
         time.sleep(.5)
-        orders = broker.account.updateCurrentOrders()
-        for curOrder in orders:
-            if (curOrder.orderId == orderResult.orderId):
-                if (curOrder.status.value != results.FILLED.value 
-                    and curOrder.status.value != results.CANCELED.value):
-                    app_log.show("Order still not through: " + str(curOrder.orderId))
-                    return False
-                else:
-                    app_log.show("Result on retry for order: " + str(curOrder.orderId) + " - " +  str(curOrder.status.value))
-                    return True
+        curOrder = broker.getOrder(orderResult.orderId)
+        if (curOrder.orderId == orderResult.orderId):
+            if (curOrder.status.value != results.FILLED.value 
+                and curOrder.status.value != results.CANCELED.value):
+                app_log.info("Order still not through: " + str(curOrder.orderId))
+                return False
+            else:
+                app_log.info("Result on retry for order: " + str(curOrder.orderId) + " - " +  str(curOrder.status.value))
+                return True
         app_log.info("Can't find order id in orders: " + str(orderResult.orderId))
         return False
     elif (orderResult.status.value != results.FILLED.value and orderResult.status.value != results.CANCELED.value):
-        app_log.show("Order still not through: " + str(orderResult.orderId))
+        app_log.info("Order still not through: " + str(orderResult.orderId))
         return False
     elif (orderResult.status.value == results.CANCELED.value):
-        app_log.show("Order cancelled by TD: " + str(orderResult.orderId))
+        app_log.info("Order cancelled by TD: " + str(orderResult.orderId))
         return False
 
     return True
 def checkToSell(curStock):
     if (curStock.shouldISell() == True):
-        app_log.info("Sold: " + curStock.symbol + " at: $" + str( curStock.currentPrice)  )
-        app_log.info("Purchased: " + curStock.symbol + " at: $" + str(curStock.purchasePrice))
         result = broker.account.sellStockMarket( curStock.symbol, price=curStock.currentPrice )
         if (not sellConfirmation(result)):
-            app_log.show("Couldn't Sell")
+            app_log.info("Couldn't Sell")
             return
+        app_log.info("Sold: " + curStock.symbol + " at: $" + str( result.sellPrice) )
+        app_log.info("Purchased: " + curStock.symbol + " at: $" + str(curStock.purchasePrice))
         curStock.purchasePrice = 0.0
         curStock.sharesHeld = 0
         printStockData([curStock])
 
 def checkToBuy(curStock):
     if (curStock.shouldIPurchase() == True):
-        stockWithNewValue = broker.getQuote( curStock.symbol, time=lastUpdateTime )
-        if (stockWithNewValue != "" and stockWithNewValue.isValid()):
-            orderResult = broker.account.purchaseStockLimit(stockWithNewValue.symbol, shares = getMaxAmountOfShares(stockWithNewValue.currentPrice), price = stockWithNewValue.currentPrice )
-            if (not sellConfirmation(orderResult)):
-                app_log.show("Couldn't Buy")
-                return
-            curStock.confirmPurchase(orderResult.targetPrice)
-            curStock.sharesHeld = orderResult.quantity
-            app_log.info("Bought: " + curStock.symbol + " at $" + str(orderResult.targetPrice))
-            printStockData([curStock])
-        else:
-            app_log.info("Failed to Purchase stock. Couldn't receive price")
+        orderResult = broker.account.purchaseStockMarket(curStock.symbol, shares = getMaxAmountOfShares(curStock.currentPrice), price = curStock.currentPrice )
+        if (not buyConfirmation(orderResult)):
+            app_log.info("Couldn't Buy")
+            return
+        curStock.confirmPurchase(orderResult.targetPrice)
+        curStock.sharesHeld = orderResult.quantity
+        app_log.info("Bought: " + curStock.symbol + " at $" + str(orderResult.targetPrice))
+        printStockData([curStock])
 
 def getMaxAmountOfShares(price):
     maxSpending = Settings.config.getfloat("buySettings", "priceStockPurchase")
@@ -144,6 +144,7 @@ def getMaxAmountOfShares(price):
     return math.floor(maxSpending / price)
 
 def updateWatchStocks(currentStocksWatching):
+    #TODO this function needs to get looked ino
     updatedStocksToWatch = []
     newStocksToWatch = Settings.getWatchStocks()
     for newStockTicker in newStocksToWatch:
@@ -172,20 +173,27 @@ def updateWatchStocks(currentStocksWatching):
 def printHoldingsFake(watchList):
     table = PrettyTable()
     table.title = "Holdings"
-    table.field_names = ["Stock", "Purchase Price", "Shares", "P/L %", "P/L $"]
+    table.field_names = ["Stock", "Purchase Price", "Shares", "P/L %"]
     for stock in watchList:
         if (stock.purchasePrice > 0):
             table.add_row([stock.symbol, str(stock.purchasePrice), stock.sharesHeld,
-            str(utility.getDifferencePercentage(stock.purchasePrice, stock.currentPrice )), stock.plDollars])
+            str(utility.getDifferencePercentage(stock.purchasePrice, stock.currentPrice ))])
     app_log.info(table)
 
-def printHoldingsReal(account):
+def printHoldingsReal( watchList):
     table = PrettyTable()
-    table.title = "Holdings"
-    table.field_names = ["Stock", "Purchase Price", "Shares",  "P/L %", "P/L $"]
-    for stock in account.getCurrentHoldings():
-        if (stock.purchasePrice > 0):
-            table.add_row([stock.symbol, str(stock.purchasePrice), stock.sharesHeld, stock.plPercent, stock.plDollars])
+    broker.account.updateAccountBalance()
+    table.title = "Equity: " + str(broker.account.equity) + " Bal: " + str(broker.account.cashBalance)
+    table.field_names = ["Stock", "Purchase Price", "Shares",  "P/L %"]
+    for stock in broker.account.getCurrentHoldings():
+        for x in watchList:
+            if (stock.symbol == x.symbol):
+                stock.currentPrice = x.currentPrice
+                x.purchasePrice = stock.purchasePrice
+                break
+
+        table.add_row([stock.symbol, str(stock.purchasePrice), stock.sharesHeld,
+        str(utility.getDifferencePercentage(stock.purchasePrice, stock.currentPrice ))])    
     app_log.info(table)
 
 def printAllInfo(stocksToWatch):
@@ -194,6 +202,7 @@ def printAllInfo(stocksToWatch):
         current_time = lastUpdateTime
         if (Settings.config.getboolean("simulationSettings", "logToFile", fallback=True) == False):
             print(current_time)
+            print("Today's PL %:" + str(broker.account.pl))
             print("Today's PL %:" + str(broker.account.pl))
             print("")
             return
@@ -206,7 +215,7 @@ def printAllInfo(stocksToWatch):
     if (Settings.config.get("default", "account") == "fakeMoney"):
         printHoldingsFake(stocksToWatch)
     else:
-        printHoldingsReal(broker.account)
+        printHoldingsReal(stocksToWatch)
 
     app_log.info("Today's PL %:" + str(broker.account.pl))
     app_log.info("")
@@ -265,6 +274,7 @@ def main():
 
     #TODO: Make this setting generic/not hardcoded
     accountType = Settings.config.get("default", "account", fallback="").strip().lower()
+    #TODO change to isinstance()
     if (accountType == "fakemoney"):
         #TODO really need to rewrite the non db stuff. 
         # Possibility make broker and account info separate classes
@@ -293,12 +303,11 @@ def main():
 
     now = datetime.datetime.now()
     startTime = datetime.datetime.strptime(Settings.config.get("default", "startTime"), "%H:%M:%S")
-    
+
     while (now.time() < startTime.time()):
         time.sleep(5)
         app_log.info("Waiting to start")
         now = datetime.datetime.now()
-
 
     global lastUpdateTime 
     lastUpdateTime = datetime.datetime.strptime(Settings.config.get("simulationSettings", "startTime"), "%Y-%m-%d %H:%M:%S")
@@ -308,6 +317,15 @@ def main():
 
     while (True):
         startTimer = time.time()
+        
+        if (Settings.isUpdated() == True):
+            app_log.info("Configure change detected")
+            newStocksToWatch = updateWatchStocks(stocksToWatch)
+            if (len(newStocksToWatch) > 0):
+                stocksToWatch = newStocksToWatch
+            else:
+                stocksToWatch = []
+
         #add data to buffer until our refresh rate is hit
         updateBufferStocksData(stocksToWatch)
 
@@ -318,14 +336,6 @@ def main():
             checkToSellOrBuy(x)
 
         printAllInfo(stocksToWatch)
-            
-        if (Settings.isUpdated() == True):
-            app_log.info("Configure change detected")
-            newStocksToWatch = updateWatchStocks(stocksToWatch)
-            if (len(newStocksToWatch) > 0):
-                stocksToWatch = newStocksToWatch
-            else:
-                stocksToWatch = []
         
         endTimer = time.time()
         print(endTimerMid -  startTimer)
@@ -336,6 +346,11 @@ def main():
             if (lastUpdateTime >  datetime.datetime.strptime(Settings.config.get("simulationSettings", "endTime"), "%Y-%m-%d %H:%M:%S") ):
                 app_log.info("Ending simulation")
                 return
+        elif (datetime.datetime.now().time() >  datetime.datetime.strptime(Settings.config.get("default", "endTime"), "%H:%M:%S").time() ):
+            app_log.info("Ending simulation")
+            #TODO sell all shares
+            return
+
 
 if __name__ == "__main__":
     main()

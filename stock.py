@@ -142,7 +142,6 @@ class Stock:
     def _sellTrigger(self):
         swingPercent = self.getSwingPercentage(self.highPrice, self.lowPrice)
         plPercent = self.getSwingPercentage(self.currentPrice, self.purchasePrice)
-        
         #sell if we are down 1.7%
         if ( plPercent < Settings.config.getfloat("sellSettings", "maxLossPercent", fallback=-1.5 )):
             self.triggered = False
@@ -162,6 +161,7 @@ class Stock:
         elif ( plPercent > Settings.config.getfloat("sellSettings", "percentGained", fallback=5 ) ):
             self.triggered = False
             #Resetting values after a trigger.
+            self.app_log.info(str(self.currentPrice), str(self.purchasePrice))
             self.resetData("_sellTrigger P/L Profit. Set at: " + str(Settings.config.getfloat("sellSettings", "percentGained", fallback=5 )))
         
         #sell on stock staying steady

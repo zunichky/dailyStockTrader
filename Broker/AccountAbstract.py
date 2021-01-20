@@ -10,9 +10,11 @@ class Account(ABC):
         self.availableFunds = 0
         self.buyingPower = 0
         self.dayTradingBuyingPower = 0
+        self.equity = 0
         self.pl = 0.0
         self.currentOrders = []
         self.settings = settings
+        self.sellPrice = 0
     '''
     @abstractmethod
     def purchaseStockMarket(self, ticker, price = 0):
