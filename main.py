@@ -57,7 +57,8 @@ def checkToSellOrBuy(curStock):
         checkToBuy(curStock)
 
 def buyConfirmation(orderResult):
-    if (orderResult == ""):
+    #TODO: Do this check inside of orderResult
+    if (orderResult == "" or orderResult.status == None or orderResult.status == "" or orderResult.status.value == ""):
         app_log.info("orderReseult is blank")
         return False
     if (orderResult.status.value == results.WORKING.value 
@@ -87,7 +88,7 @@ def buyConfirmation(orderResult):
     return True
 
 def sellConfirmation(orderResult):
-    if (orderResult == ""):
+    if (orderResult == "" or orderResult.status == None or orderResult.status == "" or orderResult.status.value == ""):
         app_log.info("orderReseult is blank")
         return False
     if (orderResult.status.value == results.WORKING.value 
@@ -157,16 +158,15 @@ def updateWatchStocks(currentStocksWatching):
                 continue
         if found == False:
             updatedStocksToWatch.append(stock.Stock(newStockTicker.upper()))
-
+    
     if (len(currentStocksWatching) > 0):
         #need to sell these stocks if holding
         app_log.info("check to sell:")
         for holding in currentStocksWatching:
             if (broker.account.doIOwnThisStock(holding.symbol) ):
-                broker.account.sellStockMarket(holding.symbol, price=holding.currentPrice)
-                app_log.info("Sold: " + holding.symbol + " at: $" + str( holding.currentPrice)  )
-                app_log.info("Purchased: " + holding.symbol + " at: $" + str(holding.purchasePrice)  )
-                
+                broker.account.sellStockMarket(holding.symbol)
+                app_log.info("Sold: " + holding.symbol  )
+
     return updatedStocksToWatch
 
 
@@ -182,7 +182,7 @@ def printHoldingsFake(watchList):
 
 def printHoldingsReal( watchList):
     table = PrettyTable()
-    broker.account.updateAccountBalance()
+    #broker.account.updateAccountBalance()
     table.title = "Equity: " + str(broker.account.equity) + " Bal: " + str(broker.account.cashBalance)
     table.field_names = ["Stock", "Purchase Price", "Shares",  "P/L %"]
     for stock in broker.account.getCurrentHoldings():
@@ -347,8 +347,12 @@ def main():
                 app_log.info("Ending simulation")
                 return
         elif (datetime.datetime.now().time() >  datetime.datetime.strptime(Settings.config.get("default", "endTime"), "%H:%M:%S").time() ):
-            app_log.info("Ending simulation")
+            app_log.info("Ending program from endTime in settings file")
             #TODO sell all shares
+            for holding in stocksToWatch:
+                if (broker.account.doIOwnThisStock(holding.symbol) ):
+                    broker.account.sellStockMarket(holding.symbol)
+                    app_log.info("Sold: " + holding.symbol  )
             return
 
 

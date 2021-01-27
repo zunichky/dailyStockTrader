@@ -16,7 +16,7 @@ class TdAccount(Account):
 
     def purchaseStockMarket(self, ticker, shares = 1, price = 0):
         result = Order()
-        if (ticker != "" and shares > 1):
+        if (ticker != "" and shares > 0):
             order = equity_buy_market(ticker, shares).build()
             result = self._placeOrder(order)
             print("Purchase Real: " + ticker )
@@ -24,7 +24,7 @@ class TdAccount(Account):
     
     def purchaseStockLimit(self, ticker, shares, price):
         result = Order()
-        if (ticker != "" and shares > 1):
+        if (ticker != "" and shares > 0):
             order = equity_buy_limit(ticker, shares, price).set_duration(Duration.FILL_OR_KILL).build()
             result = self._placeOrder(order)
             print("Purchase Real: " + ticker )
@@ -39,6 +39,7 @@ class TdAccount(Account):
         return result
 
     def sellStockMarket(self, ticker, shares = 0, price = 0):
+        #TODO: Check if stock is haulted
         purchasePrice = 0
         for x in self.currentHoldings:
             if (x.symbol == ticker):
@@ -163,23 +164,34 @@ class TdBroker(Broker):
         return ""
 
     def getOrder(self, orderId):
-        jsonReponse = json.loads(self._c.get_order(orderId, self.account.settings).text)
         order = TdOrder()
-        order.parseExecuteOrderResponse(jsonReponse, orderId)
+        try:
+            jsonReponse = json.loads(self._c.get_order(orderId, self.account.settings).text)
+            order.parseExecuteOrderResponse(jsonReponse, orderId)
+        except Exception as ex:
+            print("Failed to ger order")
+
         return order
 
     def executeOrder(self, order):
-        orderResult = self._c.place_order(self.account.settings, order)
-        orderId = Utils(self._c, self.account.settings).extract_order_id(orderResult)
+        orderId = 0
+        try:
+            orderResult = self._c.place_order(self.account.settings, order)
+            orderId = Utils(self._c, self.account.settings).extract_order_id(orderResult)
+        except Exception as ex:
+            print("Failed to execute order")
         return self.getOrder(orderId)
     
     def cancelOrder(self,  orderNumber):
-        self._c.cancel_order(orderNumber, self.account.settings)
-    
+        try:
+            self._c.cancel_order(orderNumber, self.account.settings)
+        except Exception as ex:
+            print("Faield to cancel order")
+
     def getSellingPrice(self, orderId):
-        jsonReponse = json.loads(self._c.get_order(orderId, self.account.settings).text)
         price = 0.0
         try:
+            jsonReponse = json.loads(self._c.get_order(orderId, self.account.settings).text)
             price = float(jsonReponse["orderActivityCollection"][0]["executionLegs"][0]["price"])
         except Exception as ex:
             print("Failed to get selling price")

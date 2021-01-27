@@ -62,11 +62,13 @@ class Stock:
             return
 
         if (self.currentPrice > self.highPrice ):
+            #Price is higher than highest price
             self.steadyCount = 0
             self.lastUpdated = 1
             self.highPriceCounter = self.highPriceCounter + 1
             self.lowPriceCounter = 0
         elif (self.currentPrice < self.lowPrice ):
+            #Price is lower than lowest price
             self.steadyCount = 0
             self.lastUpdated = 0
             self.lowPriceCounter = self.lowPriceCounter + 1
@@ -147,7 +149,7 @@ class Stock:
             self.triggered = False
             self.resetData("_sellTrigger P/L Loss. Set at: " + str(Settings.config.getfloat("sellSettings", "maxLossPercent", fallback=-1.5 )))
 
-        #sell on stock going down 2% from high
+        #sell on stock going down % from high
         elif ( self.lastUpdated == 0 
             and swingPercent > Settings.config.getfloat("sellSettings", "swingPercentFromHigh", fallback=2 ) 
             and self.lowPriceCounter >= Settings.config.getfloat("sellSettings", "lowPriceCounter", fallback=1 )  
@@ -168,6 +170,11 @@ class Stock:
         elif (self.steadyCount >= Settings.config.getfloat("sellSettings", "steadyCount", fallback=20 )):
             self.triggered = False
             self.resetData("_sellTrigger Steady Count")
+
+        #sell if stock changes low price X times
+        elif (self.lowPriceCounter >= Settings.config.getfloat("sellSettings", "lowPriceChanges", fallback=3 )):
+            self.triggered = False
+            self.resetData("_sellTrigger Low price changes")
 
     def confirmPurchase(self, purchasePrice):
         if (float(purchasePrice) > 0):

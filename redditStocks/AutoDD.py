@@ -38,6 +38,7 @@ from yahooquery import Ticker
 from tabulate import tabulate
 
 # dictionary of possible subreddits to search in with their respective column name
+
 subreddit_dict = {'pennystocks' : 'pnystks',
                   'RobinHoodPennyStocks' : 'RHPnnyStck',
                   'Daytrading' : 'daytrade',
@@ -361,14 +362,14 @@ def print_tbl(tbl, filename, allsub, yahoo):
         count = 0
         for x in tbl:
             #one subreddit [6] and [7. TODO make dynamic
-            if (x[12] != "PNK" and x[12] != "YHD" and float(x[13]) > 0):
+            if (x[6] != "PNK" and x[6] != "YHD" and float(x[7]) > 0):
                 count = count + 1
                 configString += '"' + x[0] + '",'
                 if (count >= 20):
                     break
         #remove last comma
         configString = configString[:-1]
-        configString += ']'
+        configString += ']\n'
 
 
     # write to file
